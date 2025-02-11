@@ -7,151 +7,261 @@ Color structure and color palettes.
 
 # No dependency
 from enum import Enum
-from typing import Sequence
+from typing import Collection
 
-from Utils.MathHelper import norm
+from pytui.Utils.MathHelper import clamp, norm
 
 
-#region ======================== Color ========================
+#region ======================== ColorHandler ========================
 
-class Color:
+class ColorHandler:
+    """
+    Handles color code conversions and operations.
 
-    def __init__(self, r: int, g: int, b: int, a: int = 255):
-        self.r = r
-        self.g = g
-        self.b = b
-        self.a = a
+    Color codes are in hexadecimal ARGB format, with alpha channel as the first byte.
+    The 'value' property contains the resulting color code.
+    """
 
-    def __eq__(self, other):
-        return (self.r, self.g, self.b, self.a) == (other.r, other.g, other.b, other.a)
+    MAX_VALUE = 255
 
-    def __hash__(self):
-        return hash(self.r*0x1000000 + self.g*0x10000 + self.b*0x100 + self.a)
+    # ================ Instantiation ================
 
-    def __repr__(self):
-        return Color.tostring(self)
-
-    def __str__(self):
-        return NamedColorList.get_name(self)
-
-    @property
-    def r(self):
-        """ The red channel of the color, from 0 to 255. """
-        return self._r
-
-    @r.setter
-    def r(self, value: int):
-        """ The red channel of the color, from 0 to 255. """
-        self._r = min(max(0, int(value)), 255)
-
-    @property
-    def g(self):
-        """ The green channel of the color, from 0 to 255. """
-        return self._g
-
-    @g.setter
-    def g(self, value: int):
-        """ The green channel of the color, from 0 to 255. """
-        self._g = min(max(0, int(value)), 255)
-
-    @property
-    def b(self):
-        """ The blue channel of the color, from 0 to 255. """
-        return self._b
-
-    @b.setter
-    def b(self, value: int):
-        """ The blue channel of the color, from 0 to 255. """
-        self._b = min(max(0, int(value)), 255)
-
-    @property
-    def a(self):
-        """ The alpha channel (transparency) of the color, from 0 to 255.
-            Used for dithering effect. """
-        return self._a
-
-    @a.setter
-    def a(self, value: int):
-        """ The alpha channel (transparency) of the color, from 0 to 255.
-            Used for dithering effect. """
-        self._a = min(max(0, int(value)), 255)
-
-    def closest_from_palette(self, palette: Sequence['Color']):
+    def __init__(self, color_code: int):
         """
-        Searches for the closest color to the current one in a given palette. \n
-        Note that this comparison does not take into account the alpha (transparency) channel.
+        Initializes a ColorHandler instance with a color code in ARGB format.
 
-        :param palette: A collection of Color instances.
-        :return: The Color instance closest from the current color within the palette, or None if palette is empty.
+        :param color_code: A color code in hexadecimal ARGB format.
         """
-        return _closest_from_palette(self, palette)
+        self.value: int = int(color_code)
+        """ The resulting color code, in ARGB format. """
 
     @staticmethod
-    def from_html_hex(hex_string: str):
+    def from_ARGB(r: int, g: int, b: int, a: int = MAX_VALUE):
         """
-        Instantiates a Color object from an HTML hexadecimal code.
+        Instantiates a ColorHandler instance from ARGB components.
+
+        :param r: The red channel of the color, from 0 to 255.
+        :param g: The green channel of the color, from 0 to 255.
+        :param b: The blue channel of the color, from 0 to 255.
+        :param a: The alpha channel of the color, from 0 to 255.
+        :return: A ColorHandler instance.
+        """
+
+        # Value range checks are inlined to avoid function call performance penalty
+        if r < 0 or r > ColorHandler.MAX_VALUE:
+            raise ValueError(f"Value for red channel must be between 0 and {ColorHandler.MAX_VALUE}.")
+        if g < 0 or g > ColorHandler.MAX_VALUE:
+            raise ValueError(f"Value for green channel must be between 0 and {ColorHandler.MAX_VALUE}.")
+        if b < 0 or b > ColorHandler.MAX_VALUE:
+            raise ValueError(f"Value for blue channel must be between 0 and {ColorHandler.MAX_VALUE}.")
+        if a < 0 or a > ColorHandler.MAX_VALUE:
+            raise ValueError(f"Value for alpha channel must be between 0 and {ColorHandler.MAX_VALUE}.")
+        return ColorHandler((a << 24) | (r << 16) | (g << 8) | b)
+    
+    @staticmethod
+    def from_html_code(hex_string: str):
+        """
+        Instantiates a ColorHandler instance from an HTML hexadecimal code.
         The format must either be #RGB, #RGBA, #RRGGBB or #RRGGBBAA
 
         :param hex_string: HTML hexadecimal color code, either in shorthand or longhand form, with optional alpha value.
-        :return: A color instance with the same values as the hexadecimal code.
+        :return: A ColorHandler instance.
         """
         hex_string = hex_string.strip()
 
-        if hex_string[0] != '#':
-            raise ValueError("Not a valid hexadecimal color code: " + hex_string)
+        if hex_string[0] == '#':
+            hex_string = hex_string[1:]
 
-        match len(hex_string[1:]):
+        match len(hex_string):
             case 3:
                 # Shorthand RBG format
-                return Color(
+                return ColorHandler.from_ARGB(
                     int(2*hex_string[1], 16),
                     int(2*hex_string[2], 16),
                     int(2*hex_string[3], 16))
             case 4:
                 # Shorthand RBGA format
-                return Color(
+                return ColorHandler.from_ARGB(
                     int(2*hex_string[1], 16),
                     int(2*hex_string[2], 16),
                     int(2*hex_string[3], 16),
                     int(2*hex_string[4], 16))
             case 6:
                 # Longhand RRGGBB format
-                return Color(
+                return ColorHandler.from_ARGB(
                     int(hex_string[1:3], 16),
                     int(hex_string[3:5], 16),
                     int(hex_string[5:7], 16))
             case 8:
                 # Longhand RRGGBBAA format
-                return Color(
+                return ColorHandler.from_ARGB(
                     int(hex_string[1:3], 16),
                     int(hex_string[3:5], 16),
                     int(hex_string[5:7], 16),
                     int(hex_string[7:9], 16))
             case _:
                 raise ValueError("Not a valid hexadecimal color code: " + hex_string)
-
+    
     @staticmethod
     def from_hsv(hue: float, saturation: float, value: float):
         """
         Instantiates a Color object from HSV values.
 
-        The RGB values are treated as within the sRGB color space.
+        The RGB values are returned within the sRGB color space.
 
-        :param hue:
-        :param saturation:
-        :param value:
+        :param hue: An angular value between 0 and 360.
+        :param saturation: Color richness, normalized between 0 (white) and 1.
+        :param value: Color presence/brightness, normalized between 0 (black) and 1.
         :return:
         :rtype: Color
         """
-        #TODO convert HSV to Color
-        pass
 
-    def to_html(self, include_alpha=False):
+        # Formula (alternative): https://en.wikipedia.org/wiki/HSL_and_HSV#To_RGB
+
+        def f(n):
+            k = (n + hue/60) % 6
+            return value - value * saturation * max(0, min(k, 4-k, 1))
+
+        return ColorHandler.from_ARGB(
+            int(round(f(5) * ColorHandler.MAX_VALUE)),
+            int(round(f(3) * ColorHandler.MAX_VALUE)),
+            int(round(f(1) * ColorHandler.MAX_VALUE))
+        )
+    
+    @staticmethod
+    def empty():
+        """ A ColorHandler instance with all channels set to 0. """
+        return ColorHandler(0)
+
+    # ================ Magic Methods ================
+    
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __add__(self, other):
+        return ColorHandler.from_ARGB(
+            max(0, min(ColorHandler.MAX_VALUE, self.r + other.r)),
+            max(0, min(ColorHandler.MAX_VALUE, self.g + other.g)),
+            max(0, min(ColorHandler.MAX_VALUE, self.b + other.b)),
+            max(0, min(ColorHandler.MAX_VALUE, self.a + other.a))
+        )
+    
+    def __iadd__(self, other):
+        self.r = max(0, min(ColorHandler.MAX_VALUE, self.r + other.r))
+        self.g = max(0, min(ColorHandler.MAX_VALUE, self.g + other.g))
+        self.b = max(0, min(ColorHandler.MAX_VALUE, self.b + other.b))
+        self.a = max(0, min(ColorHandler.MAX_VALUE, self.a + other.a))
+        return self
+        
+    def __sub__(self, other):
+        return ColorHandler.from_ARGB(
+            max(0, min(ColorHandler.MAX_VALUE, self.r - other.r)),
+            max(0, min(ColorHandler.MAX_VALUE, self.g - other.g)),
+            max(0, min(ColorHandler.MAX_VALUE, self.b - other.b)),
+            max(0, min(ColorHandler.MAX_VALUE, self.a - other.a))
+        )
+    
+    def __isub__(self, other):
+        self.r = max(0, min(ColorHandler.MAX_VALUE, self.r - other.r))
+        self.g = max(0, min(ColorHandler.MAX_VALUE, self.g - other.g))
+        self.b = max(0, min(ColorHandler.MAX_VALUE, self.b - other.b))
+        self.a = max(0, min(ColorHandler.MAX_VALUE, self.a - other.a))
+        return self
+    
+    def __and__(self, other):
+        if isinstance(other, ColorHandler):
+            return ColorHandler(self.value & other.value)
+        else:
+            return self.value & int(other)
+    
+    def __or__(self, other):
+        if isinstance(other, ColorHandler):
+            return ColorHandler(self.value | other.value)
+        else:
+            return self.value | int(other)
+    
+    def __xor__(self, other):
+        if isinstance(other, ColorHandler):
+            return ColorHandler(self.value ^ other.value)
+        else:
+            return self.value ^ int(other)
+    
+    def __hash__(self):
+        return hash(self.value)
+    
+    def __int__(self):
+        return self.value
+    
+    def __hex__(self):
+        return hex(self.value)
+
+    def __repr__(self):
+        return hex(self.value)
+    
+    def __str__(self):
+        return "ColorHandler(r={0}, g={1}, b={2}, a={3})".format(self.r, self.g, self.b, self.a)
+    
+    def __copy__(self):
+        return ColorHandler(self.value)
+
+    # ================ Properties ================
+
+    @property
+    def r(self):
+        """ The red channel of the color, from 0 to 255. """
+        return (self.value >> 16) & 0xFF
+
+    @r.setter
+    def r(self, value: int):
+        """ The red channel of the color, from 0 to 255. """
+        if value < 0 or value > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for red channel must be between 0 and 255.")
+        self.value = (self.value & 0xFF00FFFF) | (value & 0xFF) << 16
+
+    @property
+    def g(self):
+        """ The green channel of the color, from 0 to 255. """
+        return (self.value >> 8) & 0xFF
+
+    @g.setter
+    def g(self, value: int):
+        """ The green channel of the color, from 0 to 255. """
+        if value < 0 or value > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for green channel must be between 0 and 255.")
+        self.value = (self.value & 0xFFFF00FF) | (value & 0xFF) << 8
+
+    @property
+    def b(self):
+        """ The blue channel of the color, from 0 to 255. """
+        return self.value & 0xFF
+
+    @b.setter
+    def b(self, value: int):
+        """ The blue channel of the color, from 0 to 255. """
+        if value < 0 or value > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for blue channel must be between 0 and 255.")
+        self.value = (self.value & 0xFFFFFF00) | (value & 0xFF)
+
+    @property
+    def a(self):
+        """ The alpha channel of the color, from 0 to 255. """
+        return (self.value >> 24) & 0xFF
+    
+    @a.setter
+    def a(self, value: int):
+        """ The alpha channel of the color, from 0 to 255. """
+        if value < 0 or value > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for alpha channel must be between 0 and 255.")
+        self.value = (self.value & 0x00FFFFFF) | (value & 0xFF) << 24
+
+    # ================ Conversions ================
+
+    def to_html_code(self, include_alpha=False):
         """
-        Converts this color into a fully-qualified HTML hexadecimal color code.
+        Converts this color into its corresponding HTML color code representation.
 
         :param include_alpha: Whether the alpha channel is included into the hexadecimal code.
-        :return: A string representation of this color in hexadecimal HTML color format.
+        :return: a string containing the HTML color code
         :rtype: str
         """
         if include_alpha:
@@ -170,29 +280,29 @@ class Color:
         """
         # Formula: https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
 
-        unit_r = self.r / 255.0
-        unit_g = self.g / 255.0
-        unit_b = self.b / 255.0
-        x_max = max(unit_r, unit_g, unit_b)     # a.k.a. Value
-        x_min = min(unit_r, unit_g, unit_b)
-        v_range = x_max - x_min
+        unit_r = self.r / float(ColorHandler.MAX_VALUE)
+        unit_g = self.g / float(ColorHandler.MAX_VALUE)
+        unit_b = self.b / float(ColorHandler.MAX_VALUE)
+        v_max = max(unit_r, unit_g, unit_b)     # a.k.a. Value
+        v_min = min(unit_r, unit_g, unit_b)
+        chroma = v_max - v_min
 
-        if v_range == 0:
+        if chroma == 0:
             hue = 0
-        elif x_max == unit_r:
-            hue = 60 * (unit_g - unit_b) / v_range
-        elif x_max == unit_g:
-            hue = 60 * (2 + (unit_b - unit_r) / v_range)
-        else:   # x_max == unit_b
-            hue = 60 * (4 + (unit_r - unit_g) / v_range)
+        elif v_max == unit_r:
+            hue = 60 * (unit_g - unit_b) / chroma
+        elif v_max == unit_g:
+            hue = 60 * (2 + (unit_b - unit_r) / chroma)
+        else:   # v_max == unit_b
+            hue = 60 * (4 + (unit_r - unit_g) / chroma)
 
-        if x_max == 0:
+        if v_max == 0:
             saturation = 0
         else:
-            saturation = v_range / x_max
+            saturation = chroma / v_max
         
-        return hue, saturation, x_max
-
+        return hue, saturation, v_max
+    
     def to_ansi24_code(self, is_background=False):
         """
         Converts the current color into ANSI-ES terminal color code.
@@ -208,10 +318,95 @@ class Color:
             return "\033[48;2;" + str(self.r) + ";" + str(self.g) + ";" + str(self.b) + " m"
         else:
             return "\033[38;2;" + str(self.r) + ";" + str(self.g) + ";" + str(self.b) + " m"
+    
+    # ================ Manipulations ================
+    
+    def blend(self, other: "ColorHandler", ratio: float):
+        """
+        Blends the current color with another color by a given ratio.
+
+        :param other: The other color to blend with.
+        :param ratio: The ratio of the first color to the second color in the blend, between 0 and 1.
+        :return: A new color that is the blend of the two given colors.
+        :rtype: ColorHandler
+        """
+        return ColorHandler.blend_colors(self, other, ratio)
+
+    def invert(self):
+        """
+        Performs in-place inversion of the current color.
+        """
+        self.r = ColorHandler.MAX_VALUE - self.r
+        self.g = ColorHandler.MAX_VALUE - self.g
+        self.b = ColorHandler.MAX_VALUE - self.b
+        return self
+    
+    def scale_exposure(self, factor: float):
+        """
+        Uniformly scales the red, green, and blue channels by the given factor.
+        This operation mostly affects the highlights of an image.
+
+        Channel values are clamped between 0 and 255, resulting in white clipping when the scaling factor is high.
+
+        NOTE: The scaling is in-place and non-reversible.
+
+        :param factor: A positive or negative value that specifies the scaling factor.
+        """
+        self.r = int(min(max(0, self.r * factor), ColorHandler.MAX_VALUE))
+        self.g = int(min(max(0, self.g * factor), ColorHandler.MAX_VALUE))
+        self.b = int(min(max(0, self.b * factor), ColorHandler.MAX_VALUE))
+        return self
+    
+    def superpose(self, other: "ColorHandler"):
+        """
+        Superposes the current color on top of another color based on the alpha channel.
+
+        :param other: The bottom color to blend the current color on top of.
+        :return: A new color that is the superposition of the two given colors.
+        :rtype: ColorHandler
+        """
+        return ColorHandler.blend_colors(self, other, ratio=self.a / float(ColorHandler.MAX_VALUE))
+    
+    # ================ Static Methods ================
 
     @staticmethod
-    def tostring(color):
-        return "Color(R=" + str(color.r) + ", G=" + str(color.g) + ", B=" + str(color.b) + ", A=" + str(color.a) + ")"
+    def get_color_from_argb(r: int, g: int, b: int, a: int = MAX_VALUE):
+        """
+        Obtains a color code from ARGB values.
+
+        :param r: The red channel of the color, from 0 to 255.
+        :param g: The green channel of the color, from 0 to 255.
+        :param b: The blue channel of the color, from 0 to 255.
+        :param a: The alpha channel of the color, from 0 to 255.
+        :return: A color code in ARGB format.
+        :rtype: int
+        """
+
+        # Value range checks are inlined to avoid function call performance penalty
+        if r < 0 or r > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for red channel must be between 0 and 255.")
+        if g < 0 or g > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for green channel must be between 0 and 255.")
+        if b < 0 or b > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for blue channel must be between 0 and 255.")
+        if a < 0 or a > ColorHandler.MAX_VALUE:
+            raise ValueError("Value for alpha channel must be between 0 and 255.")
+        return (a << 24) | (r << 16) | (g << 8) | b
+    
+    @staticmethod
+    def blend_colors(color1: "ColorHandler", color2: "ColorHandler", ratio: float):
+        """
+        Blends two colors together by a given ratio.
+
+        :param color1: The first color
+        :param color2: The second color
+        :param ratio: The ratio of the first color to the second color in the blend, between 0 and 1
+        :return: A new color that is the blend of the two given colors
+        :rtype: ColorHandler
+        """
+        scale1 = clamp(0.0, ratio, 1.0)
+        scale2 = clamp(0.0, 1.0 - ratio, 1.0)
+        return color1.scale_exposure(scale1) + color2.scale_exposure(scale2)
 
 #endregion Color
 
@@ -222,47 +417,54 @@ class NamedColorList(Enum):
     """
     A class/enum containing a list of common named colors.
     """
-
-    Default = Color(0, 0, 0, -1)
-    Transparent = Color(0, 0, 0, 0)
-    """ The transparent color serves to reset """
+    
+    Default     = None
+    """ This value is used by PyTUI to reset color formatting to default terminal colors. """
+    Transparent = 0x00000000    # Fully transparent
 
     # Grayscale colors
-    Black = Color(0, 0, 0)
-    DarkGray = Color(64, 64, 64)
-    Gray = Color(128, 128, 128)
-    LightGray = Color(192, 192, 192)
-    White = Color(255, 255, 255)
+    Black       = 0xFF000000    # RGB(0, 0, 0)
+    DarkGray    = 0xFF404040    # RGB(64, 64, 64)
+    Gray        = 0xFF808080    # RGB(128, 128, 128)
+    LightGray   = 0xFFC0C0C0    # RGB(192, 192, 192)
+    White       = 0xFFFFFFFF    # RGB(255, 255, 255)
 
     # Spectral color ordering
-    DarkRed = Color(139, 0, 0)
-    Brown = Color(165, 42, 42)
-    Red = Color(255, 0, 0)
-    OrangeRed = Color(255, 69, 0)
-    Orange = Color(255, 165, 0)
-    Gold = Color(255, 215, 0)
-    Yellow = Color(255, 255, 0)
-    YellowGreen = Color(154, 205, 50)
-    Green = Color(0, 255, 0)
-    DarkGreen = Color(0, 128, 0)
-    Cyan = Color(0, 255, 255)
-    LightBlue = Color(173, 216, 230)
-    Blue = Color(0, 0, 255)
-    DarkBlue = Color(0, 0, 139)
-    Indigo = Color(75, 0, 130)
-    Purple = Color(128, 0, 128)
-    Magenta = Color(255, 0, 255)
-    Pink = Color(255, 192, 203)
-    Beige = Color(245, 245, 220)
+    DarkRed     = 0xFF8B0000    # RGB(139, 0, 0)
+    Brown       = 0xFFA52A2A    # RGB(165, 42, 42)
+    Red         = 0xFFFF0000    # RGB(255, 0, 0)
+    OrangeRed   = 0xFFFF4500    # RGB(255, 69, 0)
+    Orange      = 0xFFFFA500    # RGB(255, 165, 0)
+    Gold        = 0xFFFFD700    # RGB(255, 215, 0)
+    Yellow      = 0xFFFFFF00    # RGB(255, 255, 0)
+    YellowGreen = 0xFF9ACD32    # RGB(154, 205, 50)
+    Green       = 0xFF00FF00    # RGB(0, 255, 0)
+    DarkGreen   = 0xFF008000    # RGB(0, 128, 0)
+    Cyan        = 0xFF00FFFF    # RGB(0, 255, 255)
+    LightBlue   = 0xFFADD8E6    # RGB(173, 216, 230)
+    Blue        = 0xFF0000FF    # RGB(0, 0, 255)
+    DarkBlue    = 0xFF00008B    # RGB(0, 0, 139)
+    Indigo      = 0xFF4B0082    # RGB(75, 0, 130)
+    Purple      = 0xFF800080    # RGB(128, 0, 128)
+    Magenta     = 0xFFFF00FF    # RGB(255, 0, 255)
+    Pink        = 0xFFFFC0CB    # RGB(255, 192, 203)
+    Beige       = 0xFFF5F5DC    # RGB(245, 245, 220)
 
     @staticmethod
-    def get_name(color: Color):
+    def get_name(color: int):
+        """
+        Obtains a readable color name based on similarity to the NamedColorList palette.
+        :param color: The integer ARGB color value.
+        :return: The name of the closest matching color in the NamedColorList palette.
+            If the provided palette is empty, returns the string representation of its ARGB value.
+        :rtype: str
+        """
         colors = {key: value for key, value in NamedColorList.__dict__.items() if
-                  type(value) is Color}
+                  isinstance(value, int) and not key.startswith('_')}
 
-        closestColor = _closest_from_palette(color, list(colors.values()))
+        closestColor = color.closest_from_palette(list(colors.values()))
 
-        col_name = Color.tostring(closestColor)
+        col_name = repr(closestColor)
         for name, col in colors.items():
             if col == closestColor:
                 col_name_list = list(name)
@@ -286,79 +488,67 @@ class ColorPalettes:
     """
 
     ANSI3Palette = {
-        NamedColorList.Black: 30,           # Black
-        Color(170, 0, 0): 31,       # Red
-        Color(0, 170, 0): 32,       # Green
-        Color(170, 85, 0): 33,      # Yellow
-        Color(0, 0, 170): 34,       # Blue
-        Color(170, 0, 170): 35,     # Magenta
-        Color(0, 170, 170): 36,     # Cyan
-        NamedColorList.LightGray: 37        # White
+        0xFF000000: 30,     # Black     (0, 0, 0)
+        0xFFAA0000: 31,     # Red       (170, 0, 0)
+        0xFF00AA00: 32,     # Green     (0, 170, 0)
+        0xFFAA5500: 33,     # Yellow    (170, 85, 0)
+        0xFF0000AA: 34,     # Blue      (0, 0, 170)
+        0xFFAA00AA: 35,     # Magenta   (170, 0, 170)
+        0xFF00AAAA: 36,     # Cyan      (0, 170, 170)
+        0xFFC0C0C0: 37      # White     (192, 192, 192)
     }
     """ The 8 minimum colors supported by all ANSI-ES enabled terminals.
         This dictionary corresponds Colors with their respective ANSI foreground color number. """
 
     ANSI4Palette = {
         # ESC 30 to 37
-        NamedColorList.Black: 30,           # Standard black
-        Color(170, 0, 0): 31,       # Standard red
-        Color(0, 170, 0): 32,       # Standard green
-        Color(170, 85, 0): 33,      # Standard yellow
-        Color(0, 0, 170): 34,       # Standard blue
-        Color(170, 0, 170): 35,     # Standard magenta
-        Color(0, 170, 170): 36,     # Standard cyan
-        NamedColorList.LightGray: 37,       # Standard white
+        0xFF000000: 30,     # Standard black    (0, 0, 0)
+        0xFFAA0000: 31,     # Standard red      (170, 0, 0)
+        0xFF00AA00: 32,     # Standard green    (0, 170, 0)
+        0xFFAA5500: 33,     # Standard yellow   (170, 85, 0)
+        0xFF0000AA: 34,     # Standard blue     (0, 0, 170)
+        0xFFAA00AA: 35,     # Standard magenta  (170, 0, 170)
+        0xFF00AAAA: 36,     # Standard cyan     (0, 170, 170)
+        0xFFC0C0C0: 37,     # Standard white    (192, 192, 192)
         # ESC 90 to 97
-        NamedColorList.Gray: 90,            # Bright black (gray)
-        NamedColorList.Red: 91,             # Bright red
-        NamedColorList.Green: 92,           # Bright
-        NamedColorList.Yellow: 93,          # Bright
-        NamedColorList.Blue: 94,            # Bright
-        NamedColorList.Magenta: 95,         # Bright
-        NamedColorList.Cyan: 96,            # Bright
-        NamedColorList.White: 97            # Bright
+        0xFF808080: 90,     # Bright black (gray)   (128, 128, 128)
+        0xFFFF0000: 91,     # Bright red        (255, 0, 0)
+        0xFF00FF00: 92,     # Bright green      (0, 255, 0)
+        0xFFFFFF00: 93,     # Bright yellow     (255, 255, 0)
+        0xFF0000FF: 94,     # Bright blue       (0, 0, 255)
+        0xFFFF00FF: 95,     # Bright magenta    (255, 0, 255)
+        0xFF00FFFF: 96,     # Bright cyan       (0, 255, 255)
+        0xFFFFFFFF: 97      # Bright white      (255, 255, 255)
     }
+    """ 4 bit color palette present in the minimal ANSI-ES specification.\n
+        30-37: Background colors.\n
+        90-97: Foreground colors. """
 
-    ANSI256Palette = {
-        # ESC 30 to 37
-        NamedColorList.Black: 0,        # Standard black
-        Color(128, 0, 0): 1,    # Standard red
-        Color(0, 128, 0): 2,    # Standard green
-        Color(128, 128, 0): 3,  # Standard yellow
-        Color(0, 0, 128): 4,    # Standard blue
-        Color(128, 0, 128): 5,  # Standard magenta
-        Color(0, 128, 128): 6,  # Standard cyan
-        NamedColorList.LightGray: 7,    # Standard white
-        # ESC 90 to 97
-        NamedColorList.Gray: 8,         # Bright black
-        NamedColorList.Red: 9,          # Bright red
-        NamedColorList.Green: 10,       # Bright green
-        NamedColorList.Yellow: 11,      # Bright yellow
-        NamedColorList.Blue: 12,        # Bright blue
-        NamedColorList.Magenta: 13,     # Bright magenta
-        NamedColorList.Cyan: 14,        # Bright cyan
-        NamedColorList.White: 15,       # Bright white
-    }
-    """ The standard 256-color palette supported by the majority of ANSI-ES enabled terminals. """
+    # To be generated at the end of module declaration using _generate_ansi256()
+    ANSI256Palette = None
+    """ The standard 8-bit 256-color palette supported by the majority of ANSI-ES enabled terminals.\n
+        0-15: Standard 16 colors.\n
+        16-231: Gradient colors in a 6x6x6 cube.\n
+        232-255: Grayscale in 24 steps. """
 
     IdlePalette = {
-        Color(0, 0, 255): 'stdout',
-        Color(0, 0, 0): 'SYNC',
-        Color(221, 0, 0): 'COMMENT',
-        Color(255, 119, 0): 'KEYWORD',
-        Color(0, 170, 0): 'STRING',
-        Color(0, 0, 255): 'DEFINITION',
-        Color(144, 0, 144): 'BUILTIN',
-        Color(119, 0, 0): 'console',
-        Color(255, 0, 0): 'stderr'
+        0xFF0000FF: 'stdout',       # Blue       (0, 0, 255)
+        0xFF000000: 'SYNC',         # Black      (0, 0, 0)
+        0xFFDD0000: 'COMMENT',      # Red        (221, 0, 0)
+        0xFFFF7700: 'KEYWORD',      # Orange     (255, 119, 0)
+        0xFF00AA00: 'STRING',       # Green      (0, 170, 0)
+        0xFF0000FF: 'DEFINITION',   # Blue       (0, 0, 255)
+        0xFF900090: 'BUILTIN',      # Purple     (144, 0, 144)
+        0xFF770000: 'console',      # Brown      (119, 0, 0)
+        0xFFFF0000: 'stderr'        # Red        (255, 0, 0)
     }
     """
-    IdlePalette dictionary corresponds IDLE terminal output color schemes
-    to their default RGB values.
+    IdlePalette dictionary corresponds IDLE terminal's default color scheme
+    to their RGB values.
     """
 
     @staticmethod
-    def to_idle(color: Color):
+    def to_idle(color: ColorHandler):
         """
         Converts a color to the closest looking color code in IDLE's color palette.
 
@@ -368,30 +558,44 @@ class ColorPalettes:
         """
         # Since color distribution in IDLE's palette is limited,
         # there needs to be a bias towards less prevalent colors (e.g. green)
-        colorBias = Color(int(color.r * 0.5), color.g, int(color.b * 0.75))
+        colorBias = ColorHandler.from_ARGB(int(color.r * 0.5), color.g, int(color.b * 0.75))
         closestColor = _closest_from_palette(colorBias, ColorPalettes.IdlePalette.keys())
         return ColorPalettes.IdlePalette[closestColor]
 
     @staticmethod
-    def to_ansi4_code(fg_color: Color, bg_color: Color = None, is_background=False):
+    def to_ansi4_code(fg_color: int = None, bg_color: int = None):
         """
         Converts a color to the closest looking ANSI-ES 4-bit color code.
 
-        :param fg_color: The Color instance to match.
-        :param bg_color:
-        :param is_background: False to output text character color, True to output text background color.
+        If both foreground and background colors are set to None, this function outputs the default
+        terminal coloring as an ANSI color reset code.
+
+        :param fg_color: Foreground text color. Can be None to modify only the background.
+        :param bg_color: Background color. Can be None to modify only the foreground.
         :return: A properly formatted ANSI-ES 4-bit color code.
         :rtype: str
         """
+
+        if fg_color is None and bg_color is None:
+            # Output color reset code (TODO may not work on some terminals, requires testing)
+            return "\033[39;49"
+
         fg_closest = _closest_from_palette(fg_color, ColorPalettes.ANSI4Palette.keys())
-        fg_code = ColorPalettes.ANSI4Palette[fg_closest]
-        if is_background:
+        bg_closest = _closest_from_palette(bg_color, ColorPalettes.ANSI4Palette.keys())
+
+        if fg_color is None:
+            bg_code = ColorPalettes.ANSI4Palette[bg_closest] + 10
+            return "\033[" + bg_code + "m"
+        elif bg_color is None:
+            fg_code = ColorPalettes.ANSI4Palette[fg_closest]
             return "\033[" + fg_code + "m"
         else:
-            return "\033[" + (fg_code + 10) + "m"
+            fg_code = ColorPalettes.ANSI4Palette[fg_closest]
+            bg_code = ColorPalettes.ANSI4Palette[bg_closest] + 10
+            return "\033[" + fg_code + ";" + bg_code + "m"
 
     @staticmethod
-    def to_ansi256_code(color: Color, is_background=False):
+    def to_ansi256_code(color: int, is_background=False):
         """
         Converts a color to the closest looking ANSI-ES 8-bit color code.
 
@@ -408,7 +612,7 @@ class ColorPalettes:
             return "\033[38;5;" + code + "m"
 
     @staticmethod
-    def closest_from_palette(color: Color, palette: Sequence[Color]):
+    def closest_from_palette(color: int, palette: Collection[int]):
         """
         Finds and returns the closest color in a given color palette. \n
         Note that this comparison does not take into account the alpha (transparency) channel.
@@ -416,16 +620,20 @@ class ColorPalettes:
         :param color: The color to match against.
         :param palette: The palette to choose output colors from.
         :return: The color in the given palette closest to the matching color, or None if palette is empty.
+        :rtype: int
         """
-        _closest_from_palette(color, palette)
+        return _closest_from_palette(color, palette)
 
 #endregion Color Spaces
 
 
 #region ======================== Module Functions ========================
 
-def _closest_from_palette(color: Color, palette: Sequence[Color]):
+def _closest_from_palette(color: int, palette: Collection[int]):
     """
+    [Internal function]
+    Please use the equivalent function within the ColorPalettes class.
+
     Finds and returns the closest color in a given color palette.
 
     Note that this comparison does not take into account the alpha (transparency) channel.
@@ -433,38 +641,56 @@ def _closest_from_palette(color: Color, palette: Sequence[Color]):
     :param color: The color to match against.
     :param palette: The palette to choose output colors from.
     :return: The color in the given palette closest to the matching color, or None if palette is empty.
+    :rtype: int
     """
 
-    closest = None
+    if color is None:
+        return None
+
+    target = ColorHandler(color)
+    match = None
     threshold = 255*3       # Maximum initial threshold
-    for swatch in palette:
+    for color_code in palette:
         # Computes the nearest neighbor to the target color within the provided palette using vector length.
         # 'deviation' is the vector length between the target color and all colors in the palette.
+        swatch = ColorHandler(color_code)
         deviation = norm(
-            abs(color.r - swatch.r),
-            abs(color.g - swatch.g),
-            abs(color.b - swatch.b)
+            abs(target.r - swatch.r),
+            abs(target.g - swatch.g),
+            abs(target.b - swatch.b)
         )
         if deviation < threshold:
-            closest = swatch
+            match = swatch
             threshold = deviation
-    return closest
+    return match.value
 
 
-def _populate_ansi256():
+def _generate_ansi256():
+    """
+    [Internal function]
+    Generates the ANSI256Palette dictionary with 256 colors.
+    """
+
+    # 0-15 are same as ANSI 4-bit palette
+    palette = ColorPalettes.ANSI4Palette.copy() 
+
     i = 16
     vals = (0, 95, 135, 175, 215, 255)
+
     # 6*6*6 cube gradient: 16 + 36 × r + 6 × g + b (0 ≤ r, g, b ≤ 5)
     for r in vals:
         for g in vals:
             for b in vals:
-                ColorPalettes.ANSI256Palette[Color(r, g, b)] = i
+                palette[ColorHandler.get_color_from_argb(r, g, b)] = i
                 i += 1
+    
     # Grayscale in 24 steps (excluding pure black and white)
     for v in range(8, 239, 10):
-        ColorPalettes.ANSI256Palette[Color(v, v, v)] = i
+        palette[ColorHandler.get_color_from_argb(v, v, v)] = i
         i += 1
+    
+    return palette
 
-_populate_ansi256()
+ColorPalettes.ANSI256Palette = _generate_ansi256()
 
 #endregion Module Functions
