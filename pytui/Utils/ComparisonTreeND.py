@@ -75,11 +75,43 @@ class ComparisonTreeND:
             self._children[direction_key] = node
             self._change_length(len(node))
             return True
+    
+    def balance(self) -> "ComparisonTreeND":
+        """
+        Restructures the current tree (with the current node as the starting root)
+        to obtain a tree structure with minimal height.
+
+        :return: The root node of the newly balanced tree.
+        """
+
+        def _balance_from_sorted_array(array):
+            if len(array) == 1:
+                return array[0]
+            mid = len(array) // 2
+            left = _balance_from_sorted_array(array[:mid])
+            right = _balance_from_sorted_array(array[mid:])
+
+            mid_node = array[mid]
+            left._parent = right._parent = mid_node
+            mid_node._add_node(left)
+            mid_node._add_node(right)
+            return mid_node
+
+        # To balance a multidimensional tree is to iteratively balance all its dimensional axes.
+
+        for axis in range(len(self.key)):
+            # 1) Sort tree nodes using inorder traversal
+            sorted_array = list(self.traverse(axis))
+
+            # 2) Balance tree using sorted array
+            _balance_from_sorted_array(sorted_array)
 
     def _change_length(self, delta: int):
         """
         (Internal function)
-        Changes the current node's length value and propagates the change to its parents in the tree hierarchy.
+        Changes the current node's length value and propagates the change
+        to its parents in the tree hierarchy.
+
         :param delta: The amount to change.
         """
         self._length += delta
@@ -88,12 +120,17 @@ class ComparisonTreeND:
 
     def compare(self, key_vector: Sequence[int | float]):
         """
-        Calculates the components' signs of the vector formed from the current node's key to the given vector.
+        Calculates the components' signs of the vector formed from
+        the current node's key to the given vector.
+
+        In other words, the returned vector represents the direction
+        to follow from the current node to reach the given key vector.
 
         Example:
             Current node's key: (3, 5, 2);
             Comparison vector:  (7, 4, 2);
             Result:             (1, -1, 0).
+        
         :param key_vector: A vector of same dimension to compare this node with.
         :return: A list of int unit values (-1, 0, or 1) representing the signs of the comparison vector's components.
         """
@@ -146,6 +183,15 @@ class ComparisonTreeND:
         self._length = 1
 
     def seek(self, key_vector: Sequence, closest_approx=False):
+        """
+        Looks for a child node that matches the given key vector.
+
+        :param key_vector: A vector of same dimension to compare this node with.
+        :param closest_approx: Whether to return the closest approximation of the given key vector if no exact match is found.
+        :return: The child node that matches the given key vector, or None if exact match is not found and closest_approx is False.
+        """
+
+        # Check if the key vector has the same dimensionality
         if len(key_vector) != len(self.key):
             raise AttributeError(
                 "Attempting to compare vector with mismatched dimensionality: expects {0}D, got {1}D."
@@ -162,6 +208,37 @@ class ComparisonTreeND:
             elif closest_approx:
                 return self
         return None
+    
+    def traverse(self, axis):
+        """
+        Performs in-order traversal of the current node's children in the given dimensional axis.
+
+        :param axis: The axis to traverse in.
+        :return: An iterator of child nodes in the given axis.
+        """
+
+        if axis < 0 or axis >= len(self.key):
+            raise AttributeError("Invalid axis for a {0}D tree: {1}.".format(len(self.key), axis))
+
+        # Create a sorted list of unit directions to traverse in
+        # The sorting order prioritizes the given axis as the most significant component,
+        # followed by the remaining dimensions in ascending order
+        # i.e. lowest dimensions are sorted first, highest last
+        # e.g. 2D tree: [(-1, 0), (0, -1), (0, 1), (1, 0)]
+        
+        self_key = tuple([0] * len(self.key))
+        directions = [k for k in self._children.keys() if k[axis] == 0]
+        directions.append(self_key)
+        directions.extend(sorted([k for k in self._children.keys() if k[axis] == -1]))
+        directions.extend(sorted([k for k in self._children.keys() if k[axis] == 1]))
+
+        for next_direction in sorted(directions):
+            if next_direction == self_key:
+                yield self
+            else:
+                next_node = self._children[next_direction]
+                yield from next_node.traverse(axis)
+
 
     def __len__(self):
         return self._length
