@@ -1,5 +1,22 @@
 """
 Color structure and color palettes.
+
+The ColorHelper class is written with the goal of performance in mind, as coloring is an integral part of the rendering
+pipeline, with thousands of operations per draw on a commonly mid-sized canvas, affecting performance and responsiveness
+in a not insignificant manner.
+
+As such, this class does not necessarily adhere to some fundamental principles of software engineering, such as
+DRY (don't repeat yourself), where duplicate code is used to alleviate performance cost of function calls and object
+instancing.
+
+Color is stored inside ColorHelper as an int value, and operations performed directly modifies the integer, hence the
+naming of this class. This is done partly to allude to the fact colors are stored in memory as int values (to optimize
+the number of transient object instances kept in memory across a handful of canvases), and partly to respect the
+ethos of performant code, as storing separate channel values possess a performance cost across the average of operations
+(in the order of 10-20% for instancing methods).
+
+Additional optimizations are possible, such as using a LUT for costly operations, which are to be considered only once
+this project reaches a stable developmental level down the road.
 """
 
 
@@ -19,7 +36,7 @@ class ColorHandler:
     Handles color code conversions and operations.
 
     Color codes are in hexadecimal ARGB format, with alpha channel as the first byte.
-    The 'value' property contains the resulting color code.
+    The 'value' property contains the resulting color code in int.
     """
 
     MAX_VALUE = 255
@@ -256,6 +273,56 @@ class ColorHandler:
 
     # ================ Conversions ================
 
+    def grayscale(self, method: str = "luminance") -> "ColorHandler":
+        """
+        Returns a new ColorHelper instance representing the grayscale transformation of this color.
+        This conversion preserves the alpha channel's value.
+
+        --------------------------------
+
+        Different grayscale conversion methods (algorithms) are available to choose from, each with its own trade-offs.
+        Below is a breakdown of each method, its string parameter value, and a brief explanation of their effects:
+
+        - luma: Default option (also in case of invalid parameterization).
+          Relatively performant (requiring 5 calculations) and yields good results.
+          Follows the BT.601 luma curve without performing color space conversion.
+
+        - luminance:
+          Slowest, yields the best result.
+          Follows the gamma expansion curve set by BT.701 of the CIE 1931 standard's sRGB color space. This restores
+          the original linear luminance of an image before sRGB gamma compression, creating a grayscale which closely
+          matches the image's relative luminance as perceived by the trichromatic human eyes.
+
+        - average: Outputs the average of RGB channels as grayscale channel.
+          Fast to process (4 calculations), but tends to misrepresent shades of gray correctly to the human vision.
+
+        - green: Simplest conversion method - casts the green channel as the grayscale channel.
+          Fastest method (1 operation), optimal for generating thumbnail previews of photographic images.
+          In nature, the green channel dominates the visible spectrum output of the Sun, more closely correlating with
+          a scene's true luminance value compared to the red and blue channels.
+          Consequently, this method performs poorly on tinted or artificial images, and is not recommended for any
+          serious rendering intent.
+        """
+
+        match method:
+            case "average":
+                gray = int((self.r + self.g + self.b) / 3.0)
+                return ColorHandler.from_ARGB(gray, gray, gray, self.a)
+            case "green":
+                return ColorHandler.from_ARGB(self.g, self.g, self.g, self.a)
+            case "luminance":
+                # Algorithm: https://en.wikipedia.org/wiki/Grayscale#Colorimetric_(perceptual_luminance-preserving)_conversion_to_grayscale
+                def linearize(value):
+                    value = value / ColorHandler.MAX_VALUE
+                    return value/12.92 if value <= 0.04045 else ((value+0.055)/1.055)**2.4
+                gray = 0.2126 * linearize(self.r) + 0.7152 * linearize(self.g) + 0.0722 * linearize(self.b)
+                gray = int(ColorHandler.MAX_VALUE * gray)
+                return ColorHandler.from_ARGB(gray, gray, gray, self.a)
+            case _:     # luma
+                #Algorithm: https://en.wikipedia.org/wiki/Grayscale#Luma_coding_in_video_systems
+                gray = int(0.3 * self.r + 0.59 * self.g + 0.11 * self.b)
+                return ColorHandler.from_ARGB(gray, gray, gray, self.a)
+
     def to_html_code(self, include_alpha=False):
         """
         Converts this color into its corresponding HTML color code representation.
@@ -278,6 +345,7 @@ class ColorHandler:
         :return: a tuple containing three floats in this order: (hue, saturation, value)
         :rtype: (float, float, float)
         """
+
         # Formula: https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
 
         unit_r = self.r / float(ColorHandler.MAX_VALUE)
@@ -311,6 +379,7 @@ class ColorHandler:
         :return: A properly formatted 24-bit ANSI-ES color code.
         :rtype: str
         """
+
         if is_background:
             if self.a == 0:
                 # Reset
@@ -352,9 +421,10 @@ class ColorHandler:
 
         :param factor: A positive or negative value that specifies the scaling factor.
         """
-        self.r = int(min(max(0, self.r * factor), ColorHandler.MAX_VALUE))
-        self.g = int(min(max(0, self.g * factor), ColorHandler.MAX_VALUE))
-        self.b = int(min(max(0, self.b * factor), ColorHandler.MAX_VALUE))
+        # Inlined MathHelper.clamp() to reduce cost of method calls
+        self.r = int(min(max(0.0, self.r * factor), ColorHandler.MAX_VALUE))
+        self.g = int(min(max(0.0, self.g * factor), ColorHandler.MAX_VALUE))
+        self.b = int(min(max(0.0, self.b * factor), ColorHandler.MAX_VALUE))
         return self
     
     def superpose(self, other: "ColorHandler"):
@@ -404,9 +474,29 @@ class ColorHandler:
         :return: A new color that is the blend of the two given colors
         :rtype: ColorHandler
         """
+
         scale1 = clamp(0.0, ratio, 1.0)
         scale2 = clamp(0.0, 1.0 - ratio, 1.0)
         return color1.scale_exposure(scale1) + color2.scale_exposure(scale2)
+
+    @staticmethod
+    def int_to_ansi24(color_code: int, is_background: bool = False):
+        """
+        Converts a hexadecimal color code into ANSI-ES terminal color code.
+
+        :param is_background: False to output text character color, True to output text background color.
+        :return: A properly formatted 24-bit ANSI-ES color code.
+        :rtype: str
+        """
+
+        a, r, g, b = (color_code >> 24) & 0xFF, (color_code >> 16) & 0xFF, (color_code >> 8) & 0xFF, color_code & 0xFF
+        if is_background:
+            if a == 0:
+                # Reset
+                return "\033[39m"
+            return "\033[48;2;" + str(r) + ";" + str(g) + ";" + str(b) + " m"
+        else:
+            return "\033[38;2;" + str(r) + ";" + str(g) + ";" + str(b) + " m"
 
 #endregion Color
 
