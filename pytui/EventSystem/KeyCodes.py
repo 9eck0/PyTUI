@@ -8,6 +8,8 @@ Unsupported keys entry must be custom-handled using the returned bytecodes.
 from typing import Collection
 
 
+#region ================================ KeyCodes ================================
+
 class KeyCodes:
     """
     This class contains bytecodes of common ASCII characters returned by the Windows OS.
@@ -166,6 +168,33 @@ class KeyCodes:
 
     # Function keys
 
+    ArrowUp = (FunctionPrefix, H)
+    ArrowDown = (FunctionPrefix, P)
+    ArrowLeft = (FunctionPrefix, K)
+    ArrowRight = (FunctionPrefix, M)
+
+    F1 = (Null, Semicolon)
+    F2 = (Null, LeftAngleBracket)
+    F3 = (Null, Equal)
+    F4 = (Null, RightAngleBracket)
+    F5 = (Null, QuestionMark)
+    F6 = (Null, CommercialAt)
+    F7 = (Null, A)
+    F8 = (Null, B)
+    F9 = (Null, C)
+    F10 = (Null, D)
+    F11 = (FunctionPrefix, b'\x85')
+    F12 = (FunctionPrefix, b'\x86')
+
+    Insert = (FunctionPrefix, R)
+    Del = (FunctionPrefix, S)
+    PageUp = (FunctionPrefix, I)
+    PageDown = (FunctionPrefix, Q)
+    Home = (FunctionPrefix, G)
+    End = (FunctionPrefix, O)
+
+    Ctrl2 = (Null, CtrlC)
+
     CombinationCharacters = {(FunctionPrefix, H):       'ArrowUp',
                              (FunctionPrefix, P):       'ArrowDown',
                              (FunctionPrefix, K):       'ArrowLeft',
@@ -193,14 +222,14 @@ class KeyCodes:
     @staticmethod
     def tostring(key1: bytes, key2: bytes = b'\x00'):
         """
-        Returns the string representation of a keypress capture.
+        Returns a human-readable name of a keypress capture.
 
         Args:
             key1: The first bytecode returned from a keypress
             key2: The second bytecode returned from a keypress
 
         Returns:
-
+            A descriptive string name of the specified key(s).
         """
 
         if key2 == KeyCodes.Null:
@@ -209,11 +238,23 @@ class KeyCodes:
         else:
             return KeyCodes.CombinationCharacters[(key1, key2)]
 
+#endregion
+
+#region ================================ KeyCombo ================================
 
 class KeyCombo:
+    """
+    Represents an unordered and unique combination keys, serving to validate functional
+    key presses/keyboard shortcuts.
+
+    The stored combination can either be a single key value, or multiple keys given as
+    a collection object.
+    """
 
     def __init__(self, *combination: bytes | Collection[bytes]):
-        self.key_combos = set([x for x in combination])
+        self.key_combos = set()
+        for x in combination:
+            self.__iadd__(x)
 
     def __call__(self, *keycode: bytes):
         for combo in self.key_combos:
@@ -222,27 +263,49 @@ class KeyCombo:
                 return True
             elif isinstance(combo, Collection):
                 # Combination keys
-                if len(combo) == len(keycode) and set(combo) == set(keycode):
+                if set(combo) == set(keycode) and len(combo) == len(keycode):
                     return True
         return False
+
+    def __contains__(self, item):
+        if isinstance(item, Collection):
+            return list(item) in self.key_combos
+        else:
+            return item in self.key_combos
 
     def __eq__(self, other):
         if isinstance(other, KeyCombo):
             return self.key_combos == other.key_combos
         elif isinstance(other, bytes):
-            return self(other)
+            return self(other)      # __call__ for evaluation
         elif isinstance(other, Collection):
-            return self(*other)
+            return self(*other)     # __call__ for evaluation
         return False
 
     def __iadd__(self, other):
-        if isinstance(other, bytes) or isinstance(other, Collection):
+        if isinstance(other, bytes):
             self.key_combos += other
+        elif isinstance(other, Collection):
+            self.key_combos += list(other)
         else:
-            raise ValueError(f"Attempting to add invalid value type to KeyCombo: {type(other)}.")
+            raise ValueError(f"Attempting to add invalid value type ({type(other)}) to KeyCombo: {other}.")
 
     def __isub__(self, other):
         if isinstance(other, bytes) or isinstance(other, Collection):
             self.key_combos -= other
         else:
-            raise ValueError(f"Attempting to remove invalid value type from KeyCombo: {type(other)}.")
+            raise ValueError(f"Attempting to remove invalid value type ({type(other)}) from KeyCombo: {other}.")
+
+    def __len__(self):
+        return len(self.key_combos)
+
+    def __str__(self):
+        readable_keycodes = []
+        for key in self.key_combos:
+            if isinstance(key, Collection):
+                readable_keycodes += KeyCodes.tostring(*key)
+            else:
+                readable_keycodes += KeyCodes.tostring(key)
+        return f"{{{", ".join(readable_keycodes)}}}"
+
+#endregion

@@ -2,7 +2,7 @@
 Enables key presses to be captured and transmitted when the implementing component is being focused.
 """
 
-import System.Terminal.KeyboardListener as GlobalKeyListener
+import System.KeyboardListener as GlobalKeyListener
 from EventSystem.Event import *
 from EventSystem.KeyCodes import KeyCodes
 from UI.Components.Component import Component
