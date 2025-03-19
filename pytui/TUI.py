@@ -7,7 +7,7 @@ from typing import Sequence
 
 import System.Terminal.Terminal as Terminal
 
-from EventSystem.KeyCodes import KeyCodes
+from EventSystem.KeyCodes import KeyCodes, KeyCombo
 from System.FocusManager import FocusManager
 from UI.ABC.BaseContainer import BaseContainer
 from UI.ABC.Focusable import Focusable
@@ -47,9 +47,9 @@ class TUI:
 
         # ================ TUI Configuration ================
 
-        self.key_navigation_next: bytes | Sequence[bytes] = KeyCodes.Tab
+        self.key_navigation_next: KeyCombo = KeyCombo(KeyCodes.ArrowLeft)
 
-        self.key_navigation_previous: bytes | Sequence[bytes] = (KeyCodes.)
+        self.key_navigation_previous: KeyCombo = KeyCombo(KeyCodes.ArrowRight)
 
     def register(self, component: BaseComponent, parent: BaseContainer | None = None) -> Tree[BaseComponent]:
         if parent is None:
@@ -77,7 +77,7 @@ class TUI:
 
     #region ================ Layout Management ================
     """
-    PyTUI possesses a layout hierarchy composed of Frames > Panels (optional) > Components.
+    PyTUI possesses a layout hierarchy composed of Frames > [Frames | Panels] (optional) > Components.
     
     A Frame is the top-level container for a TUI, and contains all other UI components in the
     hierarchy, including other Frames.
