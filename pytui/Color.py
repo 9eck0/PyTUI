@@ -26,7 +26,7 @@ this project reaches a stable developmental level down the road.
 from enum import Enum
 from typing import Collection
 
-from pytui.Utils.MathHelper import clamp, norm
+from Utils.MathHelper import clamp, norm
 
 
 #region ======================== ColorHandler ========================
@@ -384,9 +384,9 @@ class ColorHandler:
             if self.a == 0:
                 # Reset
                 return "\033[39m"
-            return "\033[48;2;" + str(self.r) + ";" + str(self.g) + ";" + str(self.b) + " m"
+            return "\033[48;2;" + str(self.r) + ";" + str(self.g) + ";" + str(self.b) + "m"
         else:
-            return "\033[38;2;" + str(self.r) + ";" + str(self.g) + ";" + str(self.b) + " m"
+            return "\033[38;2;" + str(self.r) + ";" + str(self.g) + ";" + str(self.b) + "m"
     
     # ================ Manipulations ================
     
@@ -494,9 +494,9 @@ class ColorHandler:
             if a == 0:
                 # Reset
                 return "\033[39m"
-            return "\033[48;2;" + str(r) + ";" + str(g) + ";" + str(b) + " m"
+            return "\033[48;2;" + str(r) + ";" + str(g) + ";" + str(b) + "m"
         else:
-            return "\033[38;2;" + str(r) + ";" + str(g) + ";" + str(b) + " m"
+            return "\033[38;2;" + str(r) + ";" + str(g) + ";" + str(b) + "m"
 
 #endregion Color
 
